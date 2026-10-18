@@ -444,6 +444,35 @@ class TestPatchSequentialRegression(BaseTester):
         x[1] = 1
         self.assert_close(seq(x, params=params), x * 0.75 + x.flip(0) * 0.25, rtol=0, atol=0)
 
+    @pytest.mark.parametrize("same_on_batch", [True, False])
+    @pytest.mark.parametrize(
+        "patchwise_apply, random_apply", [(True, True), (False, True), (False, 1)], ids=["patchwise", "image", "one_of"]
+    )
+    def test_random_apply_inserts_a_mix_member_6115(self, patchwise_apply, random_apply, same_on_batch, device, dtype):
+        # The first draw asked for no mix member and the flag was then copied from a draw that had none, so the
+        # mix-insertion step never ran. A mix member is inserted like in ImageSequential, at most once per call.
+        seq = K.PatchSequential(
+            K.RandomHorizontalFlip(p=1.0),
+            K.RandomVerticalFlip(p=1.0),
+            K.RandomMixUpV2(p=1.0),
+            grid_size=(2, 2),
+            random_apply=random_apply,
+            patchwise_apply=patchwise_apply,
+            same_on_batch=same_on_batch,
+        )
+        x = torch.rand(2, 3, 8, 8, device=device, dtype=dtype)
+        calls_with_mix = 0
+        for seed in range(30):
+            torch.manual_seed(seed)
+            out = seq(x)
+            mix_params = [p for p in seq._params if p.param.name.startswith("RandomMixUpV2")]
+            assert len(mix_params) <= 1
+            if mix_params:
+                calls_with_mix += 1
+                assert mix_params[0].param.data is not None
+                self.assert_close(seq(x, params=seq._params), out, rtol=0, atol=0)
+        assert calls_with_mix > 0
+
     @pytest.mark.parametrize("padding", ["same", "valid"])
     def test_gradient_support(self, padding, device, dtype):
         x = torch.ones(2, 1, 3, 5, device=device, dtype=dtype, requires_grad=True)

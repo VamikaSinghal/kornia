@@ -421,10 +421,12 @@ class PatchSequential(ImageSequential):
 
         """
         if self.random_apply:
-            with_mix = False
+            # A mix augmentation is applied at most once per forward call: stop asking for one as soon as a
+            # drawn sequence contains it.
+            with_mix = True
             for i in range(batch_shape[0]):
                 seq, mix_added = self.get_random_forward_sequence(with_mix=with_mix)
-                with_mix = mix_added
+                with_mix = with_mix and not mix_added
                 for s in seq:
                     if isinstance(s[1], (_AugmentationBase, SequentialBase, K.MixAugmentationBaseV2)):
                         yield ParamItem(s[0], s[1].forward_parameters(torch.Size(batch_shape[1:]))), i
